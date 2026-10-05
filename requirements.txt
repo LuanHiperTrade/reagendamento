@@ -1,0 +1,8 @@
+# Dependências diretas (versões testadas com Python 3.14). As demais vêm instaladas junto.
+Django==6.1.1
+playwright==1.63.0      # depois de instalar: python -m playwright install chromium
+httpx==0.28.1
+pandas==3.0.6
+openpyxl==3.1.5         # leitura do .xlsx do Puzzle pelo pandas
+python-dotenv==1.2.3
+tzdata==2026.4          # fuso America/Sao_Paulo no Windows

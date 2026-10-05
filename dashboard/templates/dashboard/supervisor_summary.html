@@ -1,0 +1,215 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Resumo por Supervisor{% endblock %}
+
+{% block nav_icon %}fa-clipboard-list{% endblock %}
+{% block nav_title %}Resumo do Reagendamento por Supervisor - {{ hoje|date:"d/m/Y" }}{% endblock %}
+
+{% block nav_actions %}
+    <a href="{% url 'reschedule_dashboard' %}{% if selected_supervisor %}?supervisor={{ selected_supervisor|urlencode }}{% endif %}"
+       class="btn btn-outline-light btn-sm">
+        <i class="fas fa-arrow-left me-1"></i> Voltar ao Painel
+    </a>
+{% endblock %}
+
+{% block content %}
+    {% if selected_supervisor %}
+        <div class="mb-3">
+            <span class="text-muted">Filtrado por supervisor:</span> <strong>{{ selected_supervisor }}</strong>
+            <a href="{% url 'supervisor_summary' %}" class="btn btn-outline-secondary btn-sm ms-2">
+                <i class="fas fa-times me-1"></i> Ver todos
+            </a>
+        </div>
+    {% endif %}
+
+    {% for sup in resumo %}
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white py-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <div>
+                    <h5 class="card-title mb-2 text-secondary">
+                        <i class="fas fa-user-tie me-1"></i> {{ sup.supervisor }}
+                        <small class="text-muted fw-normal">({{ sup.lojas|length }} loja{{ sup.lojas|length|pluralize }})</small>
+                    </h5>
+                    <div class="d-flex flex-wrap gap-2">
+                        {% for rotulo, qtd in sup.totais %}
+                            <span class="badge {% if qtd %}bg-light text-dark border{% else %}bg-light text-muted border{% endif %}">
+                                {{ rotulo }}: <strong>{{ qtd }}</strong>
+                            </span>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% url 'supervisor_summary_image' as url_imagem %}
+                <div class="d-flex flex-wrap gap-2">
+                    <button type="button" class="btn btn-success btn-sm btn-copiar-imagem"
+                            data-url="{{ url_imagem }}?supervisor={{ sup.supervisor|urlencode }}"
+                            data-supervisor="{{ sup.supervisor }}">
+                        <i class="fas fa-image me-1"></i> <span>Copiar imagem</span>
+                    </button>
+                    <a class="btn btn-outline-success btn-sm"
+                       href="{{ url_imagem }}?supervisor={{ sup.supervisor|urlencode }}&amp;download=1">
+                        <i class="fas fa-download me-1"></i> Baixar imagem
+                    </a>
+                    <button type="button" class="btn btn-outline-primary btn-sm btn-copiar" data-alvo="texto-{{ forloop.counter }}">
+                        <i class="fas fa-copy me-1"></i> <span>Copiar texto</span>
+                    </button>
+                </div>
+                <textarea id="texto-{{ forloop.counter }}" class="d-none" aria-hidden="true">{{ sup.texto }}</textarea>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width: 35%;">Loja</th>
+                                <th style="width: 20%;">Marca</th>
+                                <th style="width: 20%;">Promotor</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for loja in sup.lojas %}
+                                {% for item in loja.itens %}
+                                    <tr>
+                                        {% if forloop.first %}
+                                            <td rowspan="{{ loja.itens|length }}" class="border-end">
+                                                <div class="fw-bold">{{ loja.loja }}</div>
+                                                <small class="text-muted">CNPJ: {{ loja.cnpj }}</small>
+                                            </td>
+                                        {% endif %}
+                                        <td><span class="badge bg-secondary">{{ item.industria }}</span></td>
+                                        <td><small>{{ item.promotor }}</small></td>
+                                        <td>
+                                            <span class="badge bg-{{ item.cor }}{% if item.cor == 'warning' or item.cor == 'info' %} text-dark{% endif %}">
+                                                {{ item.rotulo }}
+                                            </span>
+                                            {% if item.log %}
+                                                <div class="small text-break {% if item.status == 'ERRO' %}text-danger{% else %}text-muted{% endif %}">{{ item.log }}</div>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    {% empty %}
+        <div class="card border-0 shadow-sm">
+            <div class="card-body text-center py-5 text-muted">
+                Nenhuma proposta de reagendamento hoje{% if selected_supervisor %} para este supervisor{% endif %}.
+                Sincronize no painel para gerar as propostas.
+            </div>
+        </div>
+    {% endfor %}
+{% endblock %}
+
+{% block modals %}
+    <!-- Imagem para copiar com o botão direito (quando o navegador bloqueia a cópia direta) -->
+    <div class="modal fade" id="imagemModal" tabindex="-1" aria-labelledby="imagemModalTitulo" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="imagemModalTitulo">
+                        <i class="fas fa-image me-1"></i> Resumo — <span id="imagemModalSupervisor"></span>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                </div>
+                <div class="modal-body text-center bg-light">
+                    <div class="alert alert-info text-start py-2 small">
+                        <i class="fas fa-mouse-pointer me-1"></i>
+                        Clique com o <strong>botão direito</strong> na imagem e escolha <strong>"Copiar imagem"</strong>.
+                        Depois é só colar (Ctrl+V) na conversa do WhatsApp.
+                    </div>
+                    <div id="imagemCarregando" class="py-5 text-muted">
+                        <div class="spinner-border text-success mb-2" role="status"></div><br>Gerando a imagem...
+                    </div>
+                    <img id="imagemResumo" class="img-fluid shadow-sm d-none" alt="Resumo do reagendamento do supervisor">
+                </div>
+                <div class="modal-footer">
+                    <a id="imagemBaixar" class="btn btn-outline-success" href="#">
+                        <i class="fas fa-download me-1"></i> Baixar imagem
+                    </a>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fechar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block scripts %}
+    <script>
+        function mostrarImagemParaCopiar(url, supervisor) {
+            const img = document.getElementById('imagemResumo');
+            const carregando = document.getElementById('imagemCarregando');
+            document.getElementById('imagemModalSupervisor').textContent = supervisor || '';
+            document.getElementById('imagemBaixar').href = url + '&download=1';
+            carregando.classList.remove('d-none');
+            img.classList.add('d-none');
+            img.onload = () => { carregando.classList.add('d-none'); img.classList.remove('d-none'); };
+            img.src = url + '&t=' + Date.now();
+            bootstrap.Modal.getOrCreateInstance(document.getElementById('imagemModal')).show();
+        }
+
+        function feedback(btn, texto, classeOk, classeOriginal, rotuloOriginal) {
+            const rotulo = btn.querySelector('span');
+            rotulo.textContent = texto;
+            btn.classList.replace(classeOriginal, classeOk);
+            setTimeout(() => {
+                rotulo.textContent = rotuloOriginal;
+                btn.classList.replace(classeOk, classeOriginal);
+            }, 2500);
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            // Copia a imagem (PNG) para colar direto no WhatsApp Web/Desktop
+            document.querySelectorAll('.btn-copiar-imagem').forEach(btn => {
+                btn.addEventListener('click', async function () {
+                    const rotulo = this.querySelector('span');
+                    rotulo.textContent = 'Gerando...';
+                    this.disabled = true;
+                    try {
+                        if (!window.ClipboardItem || !navigator.clipboard) {
+                            throw new Error('Navegador sem suporte para copiar imagens');
+                        }
+                        // A Promise dentro do ClipboardItem mantém o "clique do usuário" válido no Chrome/Edge
+                        const url = this.dataset.url;
+                        await navigator.clipboard.write([new ClipboardItem({
+                            'image/png': fetch(url).then(r => {
+                                if (!r.ok) throw new Error('Falha ao gerar a imagem');
+                                return r.blob();
+                            }),
+                        })]);
+                        feedback(this, 'Copiada! Cole no WhatsApp', 'btn-primary', 'btn-success', 'Copiar imagem');
+                    } catch (e) {
+                        // Fora de localhost/HTTPS o navegador bloqueia a cópia por código; o
+                        // "Copiar imagem" do clique direito funciona em qualquer endereço.
+                        rotulo.textContent = 'Copiar imagem';
+                        mostrarImagemParaCopiar(this.dataset.url, this.dataset.supervisor);
+                    } finally {
+                        this.disabled = false;
+                    }
+                });
+            });
+
+            document.querySelectorAll('.btn-copiar').forEach(btn => {
+                btn.addEventListener('click', async function () {
+                    const texto = document.getElementById(this.dataset.alvo).value;
+                    const rotulo = this.querySelector('span');
+                    try {
+                        await navigator.clipboard.writeText(texto);
+                    } catch (e) {
+                        // Alternativa para navegadores sem acesso à área de transferência
+                        const tmp = document.createElement('textarea');
+                        tmp.value = texto;
+                        document.body.appendChild(tmp);
+                        tmp.select();
+                        document.execCommand('copy');
+                        tmp.remove();
+                    }
+                    feedback(this, 'Copiado!', 'btn-success', 'btn-outline-primary', 'Copiar texto');
+                });
+            });
+        });
+    </script>
+{% endblock %}

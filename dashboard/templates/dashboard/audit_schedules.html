@@ -1,0 +1,208 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Definição de Dias de Visita por Cliente{% endblock %}
+
+{% block extra_head %}
+    <style>
+        .row-pendente {
+            background-color: #fff8e1 !important; /* Destaque leve amarelado */
+        }
+        .row-pendente:hover {
+            background-color: #ffecb3 !important;
+        }
+    </style>
+{% endblock %}
+
+{% block nav_icon %}fa-sliders-h{% endblock %}
+{% block nav_title %}Regra de Dias de Visita por Cliente / Rede{% endblock %}
+
+{% block nav_actions %}
+    <a href="{% url 'reschedule_dashboard' %}" class="btn btn-outline-light btn-sm">
+        <i class="fas fa-arrow-left me-1"></i> Voltar ao Painel
+    </a>
+{% endblock %}
+
+{% block content %}
+    <!-- FORMULÁRIO ÚNICO EM MASSA -->
+    <form action="{% url 'save_client_schedule' %}" method="POST">
+        {% csrf_token %}
+
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                <div>
+                    <h5 class="card-title mb-0 text-secondary">
+                        Configurar Regras de Atendimento ({{ total_clientes }} identificados)
+                    </h5>
+                    {% if total_pendentes > 0 %}
+                        <small id="resumoPendencias" class="text-danger fw-bold">
+                            <i class="fas fa-exclamation-circle me-1"></i> {{ total_pendentes }} regra(s) pendente(s) de configuração no topo.
+                        </small>
+                    {% else %}
+                        <small id="resumoPendencias" class="text-success fw-bold">
+                            <i class="fas fa-check-circle me-1"></i> Todas as regras estão 100% configuradas e alinhadas.
+                        </small>
+                    {% endif %}
+                </div>
+
+                <button type="submit" class="btn btn-success btn-lg px-4 shadow-sm">
+                    <i class="fas fa-save me-2"></i> Salvar Todas as Alterações
+                </button>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width: 25%;">Rede / Cliente</th>
+                                <th style="width: 15%;">Indústria</th>
+                                <th style="width: 15%;">Frequência Contratada</th>
+                                <th style="width: 20%;">Dias Atualmente Salvos</th>
+                                <th style="width: 25%; min-width: 320px;">Definir / Alterar Dias de Visita</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in clientes %}
+                            <tr class="linha-regra {% if item.tem_pendencia %}row-pendente{% endif %}" data-qtd="{{ item.qtd_visitas }}">
+
+                                <!-- Coluna 1: Rede (leva também os campos ocultos da linha) -->
+                                <td>
+                                    <input type="hidden" name="rede" value="{{ item.rede }}">
+                                    <input type="hidden" name="industria" value="{{ item.industria }}">
+                                    <input type="hidden" name="frequencia_contratada" value="{{ item.frequencia_contratada }}">
+
+                                    <div class="fw-bold fs-6 d-flex align-items-center gap-2">
+                                        {{ item.rede }}
+                                        {% if item.tem_pendencia %}
+                                            <span class="badge bg-warning text-dark" style="font-size: 0.7rem;">
+                                                <i class="fas fa-exclamation-triangle me-1"></i> AÇÃO NECESSÁRIA
+                                            </span>
+                                        {% endif %}
+                                    </div>
+                                    <small class="text-muted">Ex: {{ item.exemplo_loja }}</small>
+                                </td>
+
+                                <!-- Coluna 2: Indústria -->
+                                <td>
+                                    <span class="badge bg-secondary fs-6">{{ item.industria }}</span>
+                                </td>
+
+                                <!-- Coluna 3: Frequência -->
+                                <td>
+                                    <span class="badge bg-info text-dark fs-6">
+                                        {{ item.frequencia_contratada }}
+                                    </span>
+                                </td>
+
+                                <!-- Coluna 4: Status Atual -->
+                                <td class="status-regra">
+                                    {% if item.dias_salvos %}
+                                        {% if item.tem_pendencia %}
+                                            <span class="badge bg-warning text-dark fs-6" title="Divergência: número de dias não bate com a frequência">
+                                                <i class="fas fa-exclamation-circle me-1"></i> {{ item.dias_salvos|join:", " }} (Incompleto)
+                                            </span>
+                                        {% else %}
+                                            <span class="badge bg-success fs-6">
+                                                <i class="fas fa-check-circle me-1"></i> {{ item.dias_salvos|join:", " }}
+                                            </span>
+                                        {% endif %}
+                                    {% else %}
+                                        <span class="badge bg-danger fs-6">
+                                            <i class="fas fa-times-circle me-1"></i> Não configurado
+                                        </span>
+                                    {% endif %}
+                                </td>
+
+                                <!-- Coluna 5: Seleção de Dias -->
+                                <td>
+                                    <div class="btn-group btn-group-sm" role="group" aria-label="Dias de visita de {{ item.rede }} - {{ item.industria }}">
+                                        {% for dia in dias_semana %}
+                                            <input type="checkbox"
+                                                   class="btn-check"
+                                                   id="chk_{{ forloop.parentloop.counter0 }}_{{ dia }}"
+                                                   name="dias_semana_{{ forloop.parentloop.counter0 }}"
+                                                   value="{{ dia }}"
+                                                   autocomplete="off"
+                                                   {% if dia in item.dias_salvos %}checked{% endif %}>
+
+                                            <label class="btn btn-outline-primary py-1 px-2" for="chk_{{ forloop.parentloop.counter0 }}_{{ dia }}" title="{{ dia }}">
+                                                {{ dia|slice:":3" }}
+                                            </label>
+                                        {% endfor %}
+                                    </div>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="5" class="text-center py-4 text-muted">
+                                    Nenhum contrato encontrado.
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </form>
+{% endblock %}
+
+{% block scripts %}
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            // Mesma regra do servidor: a regra só está completa quando a
+            // quantidade de dias marcados é igual à frequência contratada.
+            function linhaPendente(tr) {
+                const esperado = parseInt(tr.dataset.qtd, 10);
+                const marcados = tr.querySelectorAll('.btn-check:checked').length;
+                return marcados === 0 || marcados !== esperado;
+            }
+
+            function atualizarLinha(tr) {
+                const esperado = parseInt(tr.dataset.qtd, 10);
+                const checked = Array.from(tr.querySelectorAll('.btn-check:checked'));
+                const statusTd = tr.querySelector('.status-regra');
+                const dias = checked.map(c => c.value).join(', ');
+
+                tr.classList.toggle('row-pendente', linhaPendente(tr));
+
+                if (checked.length === 0) {
+                    statusTd.innerHTML = `
+                        <span class="badge bg-danger fs-6">
+                            <i class="fas fa-times-circle me-1"></i> Não configurado
+                        </span>`;
+                } else if (checked.length !== esperado) {
+                    statusTd.innerHTML = `
+                        <span class="badge bg-warning text-dark fs-6" title="Divergência: número de dias não bate com a frequência">
+                            <i class="fas fa-exclamation-circle me-1"></i> ${dias} (${checked.length} de ${esperado} dias, não salvo)
+                        </span>`;
+                } else {
+                    statusTd.innerHTML = `
+                        <span class="badge bg-success fs-6">
+                            <i class="fas fa-check-circle me-1"></i> ${dias} (não salvo)
+                        </span>`;
+                }
+            }
+
+            function atualizarContadorHeader() {
+                const pendentes = Array.from(document.querySelectorAll('tr.linha-regra')).filter(linhaPendente).length;
+                const resumo = document.getElementById('resumoPendencias');
+                if (!resumo) return;
+
+                if (pendentes > 0) {
+                    resumo.className = 'text-danger fw-bold';
+                    resumo.innerHTML = `<i class="fas fa-exclamation-circle me-1"></i> ${pendentes} regra(s) pendente(s) de configuração. Clique em Salvar para consolidar.`;
+                } else {
+                    resumo.className = 'text-success fw-bold';
+                    resumo.innerHTML = `<i class="fas fa-check-circle me-1"></i> Todas as regras estão configuradas na tela. Clique em Salvar para consolidar.`;
+                }
+            }
+
+            document.querySelectorAll('tr.linha-regra .btn-check').forEach(chk => {
+                chk.addEventListener('change', function () {
+                    atualizarLinha(this.closest('tr'));
+                    atualizarContadorHeader();
+                });
+            });
+        });
+    </script>
+{% endblock %}

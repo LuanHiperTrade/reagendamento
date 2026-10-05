@@ -1,0 +1,41 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Entrar{% endblock %}
+
+{% block container_class %}container mt-5{% endblock %}
+
+{% block content %}
+    <div class="row justify-content-center">
+        <div class="col-md-5 col-lg-4">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body p-4">
+                    <h5 class="card-title mb-4 text-secondary">
+                        <i class="fas fa-lock me-2"></i> Acesso ao painel
+                    </h5>
+
+                    {% if form.errors %}
+                        <div class="alert alert-danger py-2 small">Usuário ou senha inválidos.</div>
+                    {% endif %}
+
+                    <form method="POST" action="{% url 'login' %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="next" value="{{ next }}">
+
+                        <div class="mb-3">
+                            <label for="id_username" class="form-label">Usuário</label>
+                            <input type="text" name="username" id="id_username" class="form-control" autofocus required
+                                   value="{{ form.username.value|default:'' }}">
+                        </div>
+                        <div class="mb-4">
+                            <label for="id_password" class="form-label">Senha</label>
+                            <input type="password" name="password" id="id_password" class="form-control" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="fas fa-sign-in-alt me-1"></i> Entrar
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}

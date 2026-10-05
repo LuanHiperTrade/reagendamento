@@ -1,0 +1,342 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Painel de Reagendamentos{% endblock %}
+
+{% block nav_actions %}
+    <!-- Resumo do dia por supervisor (respeita o filtro atual) -->
+    <a href="{% url 'supervisor_summary' %}{% if selected_supervisor %}?supervisor={{ selected_supervisor|urlencode }}{% endif %}"
+       class="btn btn-outline-info btn-sm">
+        <i class="fas fa-clipboard-list me-1"></i> Resumo por Supervisor
+    </a>
+
+    <!-- Atendimento extra: ligar uma marca num dia -->
+    <a href="{% url 'extra_form' %}" class="btn btn-outline-success btn-sm">
+        <i class="fas fa-calendar-plus me-1"></i> Atendimento Extra
+    </a>
+
+    <!-- Acesso às Regras de Atendimento / Auditoria -->
+    <a href="{% url 'audit_dashboard' %}" class="btn btn-outline-warning btn-sm">
+        <i class="fas fa-sliders-h me-1"></i> Regras de Dias de Visita
+    </a>
+
+    <!-- Formulário de Sincronização -->
+    <form action="{% url 'run_pipeline' %}" method="POST" id="formSync" class="d-inline">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-outline-light btn-sm" id="btnSync">
+            <i class="fas fa-sync-alt me-1"></i> Sincronizar e Processar Regras
+        </button>
+    </form>
+{% endblock %}
+
+{% block content %}
+    <!-- Filtro por Supervisor -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body py-3">
+            <form method="GET" action="{% url 'reschedule_dashboard' %}" class="row g-3 align-items-center">
+                <div class="col-md-5 col-lg-4">
+                    <div class="input-group">
+                        <label class="input-group-text bg-light text-secondary" for="supervisorSelect">
+                            <i class="fas fa-user-tie me-1"></i> Supervisor:
+                        </label>
+                        <select name="supervisor" id="supervisorSelect" class="form-select" onchange="this.form.submit()">
+                            <option value="">-- Todos os Supervisores --</option>
+                            {% for sup in supervisores %}
+                                <option value="{{ sup }}" {% if sup == selected_supervisor %}selected{% endif %}>
+                                    {{ sup }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+
+                <div class="col-md-7 col-lg-8 text-end">
+                    {% if selected_supervisor %}
+                        <a href="{% url 'reschedule_dashboard' %}" class="btn btn-outline-secondary btn-sm">
+                            <i class="fas fa-times me-1"></i> Limpar Filtro
+                        </a>
+                    {% endif %}
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Cards de Métricas e Status -->
+    <div class="row g-3 mb-4">
+        <div class="col-md">
+            <div class="card border-0 shadow-sm border-start border-warning border-4">
+                <div class="card-body">
+                    <div class="text-muted small">Pendentes de Aprovação</div>
+                    <div class="h3 mb-0 fw-bold text-warning">{{ total_pendentes }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md">
+            <div class="card border-0 shadow-sm border-start border-info border-4">
+                <div class="card-body">
+                    <div class="text-muted small" title="Inclui as cobertas por outro promotor na mesma loja">Já Agendadas / Cobertas Hoje</div>
+                    <div class="h3 mb-0 fw-bold text-info">{{ total_agendados_hoje }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md">
+            <div class="card border-0 shadow-sm border-start border-secondary border-4">
+                <div class="card-body">
+                    <div class="text-muted small" title="Rota finalizada, promotor sem rota hoje ou loja fora da rota">Sem ação possível hoje</div>
+                    <div class="h3 mb-0 fw-bold text-secondary">{{ total_sem_acao }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md">
+            <div class="card border-0 shadow-sm border-start border-success border-4">
+                <div class="card-body">
+                    <div class="text-muted small">Executados no Puzzle</div>
+                    <div class="h3 mb-0 fw-bold text-success">{{ total_executados }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md">
+            <div class="card border-0 shadow-sm border-start border-danger border-4">
+                <div class="card-body">
+                    <div class="text-muted small">Erros / Falhas</div>
+                    <div class="h3 mb-0 fw-bold text-danger">{{ total_erros }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tabela Principal de Propostas -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+            <h5 class="card-title mb-0 text-secondary">
+                Propostas de Reagendamento ({{ propostas.count }})
+            </h5>
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnJustificar"
+                        title="Ex.: feriado. Vale para a loja + marca até o fim da semana">
+                    <i class="fas fa-comment-dots me-1"></i> Justificar Selecionadas
+                </button>
+                <button type="submit" form="reschedule-form" class="btn btn-success btn-sm">
+                    <i class="fas fa-play me-1"></i> Executar Reagendamentos Selecionados
+                </button>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <form id="reschedule-form" action="{% url 'execute_selected' %}" method="POST">
+                {% csrf_token %}
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width: 40px;" class="text-center">
+                                    <input type="checkbox" id="select-all" class="form-check-input" aria-label="Selecionar todas as propostas">
+                                </th>
+                                <th>Ponto de Venda / CNPJ</th>
+                                <th>Marca / Indústria</th>
+                                <th>Supervisor</th>
+                                <th>Dias Esperados</th>
+                                <th>Realizadas</th>
+                                <th>Promotor Designado</th>
+                                <th style="min-width: 220px;">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in propostas %}
+                            <tr>
+                                <td class="text-center">
+                                    <input type="checkbox" name="proposta_ids" value="{{ item.id }}" class="form-check-input select-item"
+                                           aria-label="Selecionar {{ item.ponto_de_venda }} - {{ item.industria }}"
+                                           {% if item.status not in status_executaveis %}disabled{% endif %}>
+                                </td>
+                                <td>
+                                    <div class="fw-bold">{{ item.ponto_de_venda }}</div>
+                                    <small class="text-muted">CNPJ: {{ item.cnpj }}</small>
+                                </td>
+                                <td><span class="badge bg-secondary">{{ item.industria }}</span></td>
+                                <td><small>{{ item.supervisor }}</small></td>
+                                <td><small>{{ item.dias_contratados }}</small></td>
+                                <td>
+                                    {% if item.visitas_esperadas_ate_ontem %}
+                                        <span class="badge bg-light text-dark border" title="Visitas realizadas / esperadas até ontem">
+                                            {{ item.visitas_realizadas }} de {{ item.visitas_esperadas_ate_ontem }} até ontem
+                                        </span>
+                                        <div><small class="text-muted">Contrato: {{ item.visitas_esperadas }}x/semana</small></div>
+                                    {% else %}
+                                        <span class="badge bg-light text-dark border" title="Visitas realizadas / frequência semanal">
+                                            {{ item.visitas_realizadas }} de {{ item.visitas_esperadas }} na semana
+                                        </span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="fw-semibold">{{ item.promotor_designado }}</div>
+                                    {% if item.promotor_id %}
+                                        <small class="text-muted">ID: {{ item.promotor_id }}</small>
+                                    {% else %}
+                                        <small class="text-danger">ID não encontrado</small>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if item.status == 'PENDENTE' %}
+                                        <span class="badge bg-warning text-dark"><i class="fas fa-clock me-1"></i> Pendente</span>
+                                    {% elif item.status == 'AGENDADO_HOJE' %}
+                                        <span class="badge bg-info text-dark"><i class="fas fa-calendar-check me-1"></i> Já agendada hoje</span>
+                                    {% elif item.status == 'APROVADO' %}
+                                        <span class="badge bg-primary"><i class="fas fa-check me-1"></i> Aprovado</span>
+                                    {% elif item.status == 'EXECUTADO' %}
+                                        <span class="badge bg-success"><i class="fas fa-check-circle me-1"></i> Executado</span>
+                                    {% elif item.status == 'COBERTA' %}
+                                        <span class="badge bg-coberta"><i class="fas fa-user-friends me-1"></i> Coberta por outro promotor</span>
+                                    {% elif item.status == 'ROTA_FINALIZADA' %}
+                                        <span class="badge bg-dark"><i class="fas fa-lock me-1"></i> Rota finalizada</span>
+                                    {% elif item.status == 'SEM_ROTA_HOJE' %}
+                                        <span class="badge bg-secondary"><i class="fas fa-calendar-times me-1"></i> Sem rota hoje</span>
+                                    {% elif item.status == 'FORA_DA_ROTA' %}
+                                        <span class="badge bg-secondary"><i class="fas fa-map-marker-alt me-1"></i> Loja fora da rota</span>
+                                    {% elif item.status == 'CONTRATO_NOVO' %}
+                                        <span class="badge bg-secondary"><i class="fas fa-file-signature me-1"></i> Contrato novo</span>
+                                    {% elif item.status == 'JUSTIFICADO' %}
+                                        <span class="badge bg-secondary"><i class="fas fa-comment-dots me-1"></i> Justificado</span>
+                                    {% elif item.status == 'REJEITADO' %}
+                                        <span class="badge bg-secondary"><i class="fas fa-ban me-1"></i> Rejeitado</span>
+                                    {% else %}
+                                        <span class="badge bg-danger"><i class="fas fa-times-circle me-1"></i> Erro</span>
+                                    {% endif %}
+
+                                    {% if item.log_erro %}
+                                        <div class="small mt-1 text-break {% if item.status == 'ERRO' %}text-danger{% else %}text-muted{% endif %}">
+                                            {{ item.log_erro }}
+                                        </div>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="8" class="text-center py-4 text-muted">
+                                    Nenhuma proposta de reagendamento encontrada. Clique em "Sincronizar e Processar Regras" para carregar os dados.
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </form>
+        </div>
+    </div>
+{% endblock %}
+
+{% block modals %}
+    <!-- Modal de Justificativa (ex.: feriado) -->
+    <div class="modal fade" id="justifyModal" tabindex="-1" aria-labelledby="justifyModalTitle" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <form class="modal-content" id="justify-form" action="{% url 'justify_selected' %}" method="POST">
+                {% csrf_token %}
+                <div class="modal-header">
+                    <h5 class="modal-title" id="justifyModalTitle">
+                        <i class="fas fa-comment-dots me-1"></i> Justificar <span id="justifyCount">0</span> proposta(s)
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                </div>
+                <div class="modal-body">
+                    <label for="justifyMotivo" class="form-label">Motivo</label>
+                    <textarea class="form-control" id="justifyMotivo" name="motivo" rows="3" required
+                              placeholder="Ex.: Feriado municipal - Itapevi"></textarea>
+                    <div class="form-text">
+                        A justificativa vale para cada loja + marca selecionada até o fim da semana (domingo):
+                        as próximas sincronizações não voltam a propor esse reagendamento.
+                    </div>
+                    <div id="justifyIds"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-check me-1"></i> Justificar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal de Loading / Spinner -->
+    <div class="modal fade" id="loadingModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="card border-0 shadow-lg w-100 text-center py-4 px-3">
+                <div class="card-body">
+                    <div class="spinner-border text-primary mb-3" style="width: 3.5rem; height: 3.5rem;" role="status">
+                        <span class="visually-hidden">Carregando...</span>
+                    </div>
+                    <h5 class="fw-bold text-dark mb-2" id="loadingTitle">Sincronizando com o Puzzle...</h5>
+                    <p class="text-muted small mb-0" id="loadingSubtitle">
+                        Coletando dados de rotas e processando regras de reagendamento.<br>
+                        Por favor, aguarde alguns instantes.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block scripts %}
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const loadingModalElement = document.getElementById('loadingModal');
+            const loadingModal = loadingModalElement ? new bootstrap.Modal(loadingModalElement) : null;
+
+            // 1. Checkbox "Selecionar Todos"
+            const selectAll = document.getElementById('select-all');
+            if (selectAll) {
+                selectAll.addEventListener('change', function () {
+                    const checkboxes = document.querySelectorAll('.select-item:not([disabled])');
+                    checkboxes.forEach(cb => cb.checked = this.checked);
+                });
+            }
+
+            // 1.1 Justificar selecionadas: leva os IDs marcados para o formulário do modal
+            const btnJustificar = document.getElementById('btnJustificar');
+            const justifyModalEl = document.getElementById('justifyModal');
+            if (btnJustificar && justifyModalEl) {
+                const justifyModal = new bootstrap.Modal(justifyModalEl);
+                btnJustificar.addEventListener('click', function () {
+                    const marcados = document.querySelectorAll('.select-item:checked');
+                    if (marcados.length === 0) {
+                        alert('Selecione ao menos uma proposta para justificar.');
+                        return;
+                    }
+                    const destino = document.getElementById('justifyIds');
+                    destino.innerHTML = '';
+                    marcados.forEach(cb => {
+                        const input = document.createElement('input');
+                        input.type = 'hidden';
+                        input.name = 'proposta_ids';
+                        input.value = cb.value;
+                        destino.appendChild(input);
+                    });
+                    document.getElementById('justifyCount').innerText = marcados.length;
+                    justifyModal.show();
+                });
+            }
+
+            // 2. Loading da Sincronização (Navbar)
+            const formSync = document.getElementById('formSync');
+            if (formSync && loadingModal) {
+                formSync.addEventListener('submit', function () {
+                    document.getElementById('loadingTitle').innerText = 'Sincronizando com o Puzzle...';
+                    document.getElementById('loadingSubtitle').innerHTML = 'Coletando dados de rotas e processando regras.<br>Por favor, aguarde alguns instantes.';
+                    loadingModal.show();
+                });
+            }
+
+            // 3. Loading da Execução via Playwright (Tabela)
+            const formExecute = document.getElementById('reschedule-form');
+            if (formExecute && loadingModal) {
+                formExecute.addEventListener('submit', function (e) {
+                    const checkedItems = document.querySelectorAll('.select-item:checked');
+                    if (checkedItems.length > 0) {
+                        document.getElementById('loadingTitle').innerText = 'Executando Reagendamentos no Puzzle...';
+                        document.getElementById('loadingSubtitle').innerHTML = `O robô Playwright está aplicando ${checkedItems.length} reagendamento(s) no site.<br>Isso pode levar alguns minutos.`;
+                        loadingModal.show();
+                    } else {
+                        e.preventDefault();
+                        alert('Por favor, selecione ao menos uma proposta para executar.');
+                    }
+                });
+            }
+        });
+    </script>
+{% endblock %}

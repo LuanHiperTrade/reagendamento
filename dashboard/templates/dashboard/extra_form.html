@@ -1,0 +1,231 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Atendimento Extra{% endblock %}
+{% block nav_icon %}fa-calendar-plus{% endblock %}
+{% block nav_title %}Atendimento Extra - Ligar marca num dia{% endblock %}
+
+{% block nav_actions %}
+    <a href="{% url 'reschedule_dashboard' %}" class="btn btn-outline-light btn-sm">
+        <i class="fas fa-arrow-left me-1"></i> Voltar ao Painel
+    </a>
+{% endblock %}
+
+{% block content %}
+    {% if sem_rotas_fixas %}
+        <div class="alert alert-warning">
+            Ainda não há rotas fixas baixadas. Sincronize no painel de reagendamentos para carregar as rotas fixas.
+        </div>
+    {% endif %}
+
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white py-3">
+            <h5 class="card-title mb-0 text-secondary">
+                <i class="fas fa-plus-circle me-1"></i> Novo atendimento extra
+            </h5>
+            <small class="text-muted">
+                A marca é ligada na <strong>rota agendada do dia</strong> do promotor de <strong>rota fixa</strong>
+                que faz a marca em cada loja. Primeiro é gerada uma prévia; nada é alterado no Puzzle até você confirmar.
+            </small>
+        </div>
+        <div class="card-body">
+            <form method="POST" action="{% url 'extra_preview' %}" id="formExtra">
+                {% csrf_token %}
+                <div class="row g-3">
+                    <div class="col-md-5">
+                        <label for="marca" class="form-label fw-semibold">Marca / Cliente</label>
+                        <input class="form-control" list="listaMarcas" id="marca" name="marca" required
+                               placeholder="Digite para buscar..." autocomplete="off">
+                        <datalist id="listaMarcas">
+                            {% for marca in marcas %}<option value="{{ marca }}">{% endfor %}
+                        </datalist>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="data" class="form-label fw-semibold">Dia do atendimento</label>
+                        <input type="date" class="form-control" id="data" name="data" required
+                               min="{{ hoje|date:'Y-m-d' }}" value="{{ hoje|date:'Y-m-d' }}">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-semibold d-block">Lojas</label>
+                        <div class="btn-group" role="group" aria-label="Escolha das lojas">
+                            <input type="radio" class="btn-check" name="escopo" id="escopoRede" value="rede" checked>
+                            <label class="btn btn-outline-primary" for="escopoRede"><i class="fas fa-store me-1"></i> Rede inteira</label>
+                            <input type="radio" class="btn-check" name="escopo" id="escopoLojas" value="lojas">
+                            <label class="btn btn-outline-primary" for="escopoLojas"><i class="fas fa-list-check me-1"></i> Escolher lojas</label>
+                        </div>
+                    </div>
+
+                    <div class="col-12" id="blocoRedes">
+                        {% for rede in redes %}
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="checkbox" name="redes" value="{{ rede }}" id="rede{{ forloop.counter }}" checked>
+                                <label class="form-check-label" for="rede{{ forloop.counter }}">{{ rede }}</label>
+                            </div>
+                        {% endfor %}
+                        <small class="text-muted d-block" id="resumoRede">Escolha a marca para ver quantas lojas entram.</small>
+                    </div>
+
+                    <div class="col-12 d-none" id="blocoLojas">
+                        <div class="d-flex gap-2 mb-2">
+                            <input type="search" class="form-control form-control-sm" id="buscaLoja" placeholder="Filtrar lojas...">
+                            <button type="button" class="btn btn-outline-secondary btn-sm text-nowrap" id="marcarVisiveis">Marcar visíveis</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm text-nowrap" id="desmarcarTodas">Desmarcar</button>
+                        </div>
+                        <div class="border rounded p-2 bg-light" style="max-height: 320px; overflow-y: auto;" id="listaLojas">
+                            <small class="text-muted">Escolha a marca para listar as lojas.</small>
+                        </div>
+                        <small class="text-muted" id="contadorLojas"></small>
+                    </div>
+
+                    <div class="col-12">
+                        <label for="motivo" class="form-label fw-semibold">Motivo / Observação</label>
+                        <input type="text" class="form-control" id="motivo" name="motivo"
+                               placeholder="Ex.: Ação promocional da marca no fim de semana">
+                    </div>
+                </div>
+                <div class="mt-3 text-end">
+                    <button type="submit" class="btn btn-primary" id="btnPrevia">
+                        <i class="fas fa-search me-1"></i> Gerar prévia
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white py-3">
+            <h5 class="card-title mb-0 text-secondary"><i class="fas fa-history me-1"></i> Últimos atendimentos extras</h5>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr><th>Dia</th><th>Marca</th><th>Lojas</th><th>Resultado</th><th>Status</th><th>Pedido por</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        {% for a in historico %}
+                            <tr>
+                                <td>{{ a.data|date:"d/m/Y" }}</td>
+                                <td><span class="badge bg-secondary">{{ a.marca }}</span></td>
+                                <td><small>{% if a.redes %}Rede: {{ a.redes }}{% else %}Escolhidas{% endif %} · {{ a.total }}</small></td>
+                                <td><small>{{ a.ligadas }} ligada(s){% if a.erros %}, <span class="text-danger">{{ a.erros }} erro(s)</span>{% endif %}</small></td>
+                                <td>
+                                    {% if a.status == 'EXECUTADO' %}<span class="badge bg-success">Executado</span>
+                                    {% elif a.status == 'PARCIAL' %}<span class="badge bg-warning text-dark">Com pendências</span>
+                                    {% else %}<span class="badge bg-light text-dark border">Prévia</span>{% endif %}
+                                </td>
+                                <td><small>{{ a.usuario.get_username|default:"-" }} · {{ a.criado_em|date:"d/m H:i" }}</small></td>
+                                <td class="text-end"><a href="{% url 'extra_detail' a.pk %}" class="btn btn-outline-primary btn-sm">Abrir</a></td>
+                            </tr>
+                        {% empty %}
+                            <tr><td colspan="7" class="text-center text-muted py-4">Nenhum atendimento extra ainda.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block modals %}
+    <div class="modal fade" id="loadingModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="card border-0 shadow-lg w-100 text-center py-4 px-3">
+                <div class="card-body">
+                    <div class="spinner-border text-primary mb-3" style="width: 3.5rem; height: 3.5rem;" role="status"></div>
+                    <h5 class="fw-bold mb-2">Gerando a prévia...</h5>
+                    <p class="text-muted small mb-0">Consultando no Puzzle a rota do dia de cada promotor (somente leitura).<br>Não feche a página.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block scripts %}
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const urlLojas = "{% url 'extra_stores' %}";
+            const marca = document.getElementById('marca');
+            const lista = document.getElementById('listaLojas');
+            const busca = document.getElementById('buscaLoja');
+            const contador = document.getElementById('contadorLojas');
+            const resumoRede = document.getElementById('resumoRede');
+            let lojas = [];
+
+            function escopo() { return document.querySelector('input[name="escopo"]:checked').value; }
+
+            function alternarEscopo() {
+                const porLojas = escopo() === 'lojas';
+                document.getElementById('blocoLojas').classList.toggle('d-none', !porLojas);
+                document.getElementById('blocoRedes').classList.toggle('d-none', porLojas);
+            }
+
+            function atualizarContador() {
+                const n = lista.querySelectorAll('input[name="lojas"]:checked').length;
+                contador.textContent = lojas.length ? `${n} de ${lojas.length} loja(s) selecionada(s)` : '';
+            }
+
+            function atualizarResumoRede() {
+                if (!lojas.length) { resumoRede.textContent = marca.value ? 'Nenhuma loja com promotor de rota fixa para essa marca.' : 'Escolha a marca para ver quantas lojas entram.'; return; }
+                const redes = Array.from(document.querySelectorAll('input[name="redes"]:checked')).map(c => c.value);
+                const n = lojas.filter(l => redes.includes(l.rede)).length;
+                resumoRede.textContent = `${n} loja(s) com promotor de rota fixa para a marca nas redes escolhidas.`;
+            }
+
+            function desenharLojas() {
+                if (!lojas.length) {
+                    lista.innerHTML = '<small class="text-muted">' + (marca.value ? 'Nenhuma loja com promotor de rota fixa para essa marca.' : 'Escolha a marca para listar as lojas.') + '</small>';
+                } else {
+                    lista.innerHTML = lojas.map((l, i) => `
+                        <div class="form-check loja-item" data-busca="${(l.loja + ' ' + l.promotores.join(' ')).toLowerCase()}">
+                            <input class="form-check-input" type="checkbox" name="lojas" value="${l.loja.replace(/"/g, '&quot;')}" id="loja${i}">
+                            <label class="form-check-label" for="loja${i}">${l.loja}
+                                <small class="text-muted">· ${l.promotores.join(', ')}</small></label>
+                        </div>`).join('');
+                }
+                atualizarContador();
+                atualizarResumoRede();
+            }
+
+            async function carregarLojas() {
+                lojas = [];
+                if (marca.value) {
+                    const r = await fetch(`${urlLojas}?marca=${encodeURIComponent(marca.value)}`);
+                    lojas = (await r.json()).lojas;
+                }
+                desenharLojas();
+            }
+
+            marca.addEventListener('change', carregarLojas);
+            document.querySelectorAll('input[name="escopo"]').forEach(r => r.addEventListener('change', alternarEscopo));
+            document.querySelectorAll('input[name="redes"]').forEach(r => r.addEventListener('change', atualizarResumoRede));
+            lista.addEventListener('change', atualizarContador);
+            busca.addEventListener('input', function () {
+                const termo = this.value.toLowerCase();
+                lista.querySelectorAll('.loja-item').forEach(el => el.classList.toggle('d-none', !el.dataset.busca.includes(termo)));
+            });
+            document.getElementById('marcarVisiveis').addEventListener('click', () => {
+                lista.querySelectorAll('.loja-item:not(.d-none) input').forEach(c => c.checked = true);
+                atualizarContador();
+            });
+            document.getElementById('desmarcarTodas').addEventListener('click', () => {
+                lista.querySelectorAll('input[name="lojas"]').forEach(c => c.checked = false);
+                atualizarContador();
+            });
+
+            document.getElementById('formExtra').addEventListener('submit', function (e) {
+                if (escopo() === 'lojas' && !lista.querySelector('input[name="lojas"]:checked')) {
+                    e.preventDefault();
+                    alert('Selecione ao menos uma loja.');
+                    return;
+                }
+                if (escopo() === 'rede' && !document.querySelector('input[name="redes"]:checked')) {
+                    e.preventDefault();
+                    alert('Escolha ao menos uma rede.');
+                    return;
+                }
+                new bootstrap.Modal(document.getElementById('loadingModal')).show();
+            });
+            alternarEscopo();
+        });
+    </script>
+{% endblock %}

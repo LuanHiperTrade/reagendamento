@@ -1,0 +1,116 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Atendimento Extra - {{ atendimento.marca }}{% endblock %}
+{% block nav_icon %}fa-calendar-plus{% endblock %}
+{% block nav_title %}Atendimento Extra - {{ atendimento.marca }} em {{ atendimento.data|date:"d/m/Y" }}{% endblock %}
+
+{% block nav_actions %}
+    <a href="{% url 'extra_form' %}" class="btn btn-outline-light btn-sm">
+        <i class="fas fa-arrow-left me-1"></i> Voltar
+    </a>
+{% endblock %}
+
+{% block content %}
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-3">
+            <div>
+                <div class="h5 mb-1">
+                    <span class="badge bg-secondary">{{ atendimento.marca }}</span>
+                    em <strong>{{ atendimento.data|date:"d/m/Y (l)" }}</strong>
+                </div>
+                <small class="text-muted">
+                    {% if atendimento.redes %}Rede inteira: {{ atendimento.redes }}{% else %}Lojas escolhidas{% endif %}
+                    · {{ itens|length }} loja(s)
+                    · pedido por {{ atendimento.usuario.get_username|default:"-" }} em {{ atendimento.criado_em|date:"d/m/Y H:i" }}
+                    {% if atendimento.executado_em %}· executado em {{ atendimento.executado_em|date:"d/m/Y H:i" }}{% endif %}
+                </small>
+                {% if atendimento.motivo %}<div class="small mt-1"><i class="fas fa-comment-dots me-1 text-muted"></i>{{ atendimento.motivo }}</div>{% endif %}
+                <div class="d-flex flex-wrap gap-2 mt-2">
+                    {% for rotulo, qtd, status in contagem %}
+                        <span class="badge bg-light text-dark border">{{ rotulo }}: <strong>{{ qtd }}</strong></span>
+                    {% endfor %}
+                </div>
+            </div>
+
+            {% if pode_executar and a_executar %}
+                <form method="POST" action="{% url 'extra_execute' atendimento.pk %}" id="formExecutar">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-success btn-lg">
+                        <i class="fas fa-play me-1"></i> Confirmar e ligar em {{ a_executar }} loja(s)
+                    </button>
+                    <div class="small text-muted text-end mt-1">Altera as rotas de {{ atendimento.data|date:"d/m/Y" }} no Puzzle.</div>
+                </form>
+            {% elif not pode_executar %}
+                <span class="badge bg-dark fs-6">Dia já passou</span>
+            {% else %}
+                <span class="badge bg-success fs-6"><i class="fas fa-check me-1"></i> Nada pendente</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr><th>Loja</th><th>Promotor (rota fixa)</th><th>Itinerário do dia</th><th style="min-width: 260px;">Situação</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for item in itens %}
+                            <tr>
+                                <td class="fw-semibold">{{ item.ponto_de_venda }}</td>
+                                <td>
+                                    {{ item.promotor_designado|default:"-" }}
+                                    {% if item.promotor_id %}<div><small class="text-muted">ID: {{ item.promotor_id }}</small></div>{% endif %}
+                                </td>
+                                <td>{{ item.itinerary_id|default:"-" }}</td>
+                                <td>
+                                    {% if item.status == 'PRONTO' %}<span class="badge bg-warning text-dark"><i class="fas fa-clock me-1"></i> Pronto para ligar</span>
+                                    {% elif item.status == 'EXECUTADO' %}<span class="badge bg-success"><i class="fas fa-check-circle me-1"></i> Marca ligada</span>
+                                    {% elif item.status == 'JA_ATIVO' %}<span class="badge bg-info text-dark"><i class="fas fa-calendar-check me-1"></i> Já estava ligada</span>
+                                    {% elif item.status == 'ERRO' %}<span class="badge bg-danger"><i class="fas fa-times-circle me-1"></i> Erro</span>
+                                    {% elif item.status == 'ROTA_FINALIZADA' %}<span class="badge bg-dark"><i class="fas fa-lock me-1"></i> Rota finalizada</span>
+                                    {% else %}<span class="badge bg-secondary">{{ item.get_status_display }}</span>{% endif %}
+                                    {% if item.log %}
+                                        <div class="small mt-1 text-break {% if item.status == 'ERRO' %}text-danger{% else %}text-muted{% endif %}">{{ item.log }}</div>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block modals %}
+    <div class="modal fade" id="loadingModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="card border-0 shadow-lg w-100 text-center py-4 px-3">
+                <div class="card-body">
+                    <div class="spinner-border text-success mb-3" style="width: 3.5rem; height: 3.5rem;" role="status"></div>
+                    <h5 class="fw-bold mb-2">Ligando a marca no Puzzle...</h5>
+                    <p class="text-muted small mb-0">O robô está alterando as rotas de {{ atendimento.data|date:"d/m/Y" }}.<br>Isso pode levar alguns minutos; não feche a página.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block scripts %}
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const form = document.getElementById('formExecutar');
+            if (form) {
+                form.addEventListener('submit', function (e) {
+                    if (!confirm('Confirma ligar a marca {{ atendimento.marca|escapejs }} em {{ a_executar }} loja(s) no dia {{ atendimento.data|date:"d/m/Y" }}?')) {
+                        e.preventDefault();
+                        return;
+                    }
+                    new bootstrap.Modal(document.getElementById('loadingModal')).show();
+                });
+            }
+        });
+    </script>
+{% endblock %}

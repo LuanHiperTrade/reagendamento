@@ -1,0 +1,29 @@
+# Segredos (senha do Puzzle, SECRET_KEY) — use .env.example como modelo
+.env
+.env.*
+!.env.example
+
+# Ambiente Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# Banco local (propostas, usuários e senhas do painel)
+db.sqlite3
+db.sqlite3-journal
+
+# Arquivos baixados do Puzzle (planilhas, rotas fixas, dados de lojas/promotores)
+media/
+downloads/
+json_exports/
+
+# Diversos
+*.log
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Placeholders vazios (ainda sem configuração Docker)
+Dockerfile
+docker-compose.yml
